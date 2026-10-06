@@ -26,6 +26,7 @@ export default function EditorShell() {
   const [cutStart, setCutStart] = useState<number | null>(null);
   const [cutEnd, setCutEnd] = useState<number | null>(null);
   const [videoDuration, setVideoDuration] = useState(60);
+  const [zoomLevel, setZoomLevel] = useState(1);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const MAX_FREE_DURATION = 60;
   const MAX_PRO_DURATION = 600;
@@ -255,11 +256,11 @@ export default function EditorShell() {
       </div>
       {/* Timeline */}
 <div
-  className="p-4 border-t border-gray-800 relative"
+  className="p-4 border-t border-gray-800 relative overflow-x-auto"
   onMouseDown={handleTimelineClick}
   onMouseMove={handleTimelineDrag}
 >
-  <div className="flex gap-2">
+<div className="flex gap-2" style={{ width: `${100 * zoomLevel}%` }}>
     {/* Video Track */}
     <div
       onClick={() => setSelectedTrack("video")}
@@ -356,6 +357,25 @@ export default function EditorShell() {
     </button>
   ))}
 </div>
+{/* Zoom Controls */}
+<div className="flex justify-center gap-2 p-2 border-t border-gray-800">
+  <button
+    onClick={() => setZoomLevel((prev) => Math.max(0.5, prev - 0.5))}
+    className="bg-gray-700 px-3 py-1 rounded text-xs font-medium"
+  >
+    Zoom Out
+  </button>
+  <span className="text-xs text-gray-400 flex items-center">
+    {zoomLevel}x
+  </span>
+  <button
+    onClick={() => setZoomLevel((prev) => Math.min(3, prev + 0.5))}
+    className="bg-gray-700 px-3 py-1 rounded text-xs font-medium"
+  >
+    Zoom In
+  </button>
+</div>
+
 {!isPro && (
         <div className="absolute bottom-20 right-4 bg-black/50 px-3 py-1 rounded text-xs text-white">
           Made with Alinka AI (Free)
