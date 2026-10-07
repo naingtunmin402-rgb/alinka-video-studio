@@ -27,7 +27,13 @@ export default function EditorShell() {
   const [cutEnd, setCutEnd] = useState<number | null>(null);
   const [videoDuration, setVideoDuration] = useState(60);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+const [audioName, setAudioName] = useState<string>("");
+const [audioStartTime, setAudioStartTime] = useState(0);
+  const [exportResolution, setExportResolution] = useState("1080p");
+const [exportFormat, setExportFormat] = useState("mp4");
   const videoRef = React.useRef<HTMLVideoElement>(null);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
   const MAX_FREE_DURATION = 60;
   const MAX_PRO_DURATION = 600;
   const handleVoiceover = async () => {
@@ -109,27 +115,94 @@ export default function EditorShell() {
       alert("Cut reset. Start again.");
     }
   };
-  
-  const handleExport = () => {
+  const handleAudioImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setAudioUrl(url);
+      setAudioName(file.name);
+      alert("Audio imported: " + file.name);
+    }
+  };
+  const handleExport = async () => {
     if (!isPro && videoDuration > MAX_FREE_DURATION) {
       alert("Free Plan: Video duration limited to 1 minute. Upgrade to Pro for 10 minutes!");
       setShowUpgrade(true);
       return;
     }
+  
+    if (!videoRef.current) {
+      alert("No video to export!");
+      return;
+    }
+  
     setIsExporting(true);
     setExportProgress(0);
   
-    const interval = setInterval(() => {
-      setExportProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsExporting(false);
-          alert("Export အောင်မြင်ပါပြီ! (Demo)");
-          return 100;
-        }
-        return prev + 10;
+    try {
+      const video = videoRef.current;
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+  
+      if (!ctx) {
+        throw new Error("Canvas context not available");
+      }
+  
+      const stream = canvas.captureStream(30);
+      const recorder = new MediaRecorder(stream, {
+        mimeType: "video/webm",
       });
-    }, 500);
+  
+      const chunks: Blob[] = [];
+  
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+  
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: "video/webm" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "alinka-export.webm";
+        a.click();
+        URL.revokeObjectURL(url);
+        setIsExporting(false);
+        alert("Export အောင်မြင်ပါပြီ!");
+      };
+  
+      recorder.start();
+  
+      const startTime = Date.now();
+      const duration = videoDuration * 1000;
+  
+      const drawFrame = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min((elapsed / duration) * 100, 100);
+        setExportProgress(progress);
+  
+        if (ctx && video) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }
+  
+        if (elapsed < duration) {
+          requestAnimationFrame(drawFrame);
+        } else {
+          recorder.stop();
+        }
+      };
+  
+      video.currentTime = 0;
+      await video.play();
+      drawFrame();
+    } catch (error: any) {
+      alert("Export Error: " + error.message);
+      setIsExporting(false);
+    }
   };
   
   const getToolClass = (tool: string) => {
@@ -234,15 +307,34 @@ export default function EditorShell() {
         </div>
   
         <div className="flex-1 flex items-center justify-center p-4">
+          
           <div className="w-[300px] h-[500px] bg-black rounded-xl border border-gray-700 flex items-center justify-center text-gray-500 overflow-hidden">
-            {mediaUrl && mediaType === "video" && (
-              <video
-                src={mediaUrl}
-                ref={videoRef}
-                controls
-                className="w-full h-full object-cover"
-              />
-            )}
+          {mediaUrl && mediaType === "video" && (
+  <video
+    src={mediaUrl}
+    ref={videoRef}
+    controls
+    className="w-full h-full object-cover"
+    onTimeUpdate={(e) => {
+      const video = e.currentTarget;
+      if (audioRef.current && audioUrl) {
+        if (Math.abs(audioRef.current.currentTime - video.currentTime) > 0.3) {
+          audioRef.current.currentTime = video.currentTime;
+        }
+      }
+    }}
+    onPlay={() => {
+      if (audioRef.current) {
+        audioRef.current.play();
+      }
+    }}
+    onPause={() => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    }}
+  />
+)}
             {mediaUrl && mediaType === "image" && (
               <img
                 src={mediaUrl}
@@ -254,6 +346,13 @@ export default function EditorShell() {
           </div>
         </div>
       </div>
+      {audioUrl && (
+  <audio
+    ref={audioRef}
+    src={audioUrl}
+    className="hidden"
+  />
+)}
       {/* Timeline */}
 <div
   className="p-4 border-t border-gray-800 relative overflow-x-auto"
@@ -286,21 +385,33 @@ export default function EditorShell() {
     </div>
 
     {/* Audio Track */}
-    <div
-      onClick={() => setSelectedTrack("audio")}
-      className={`flex-1 h-16 rounded-lg flex items-center px-4 text-sm cursor-pointer relative overflow-hidden ${
-        selectedTrack === "audio"
-          ? "bg-teal-900 border-2 border-teal-500"
-          : "bg-gray-900"
-      }`}
-    >
-      <span className="absolute left-2 top-1 text-xs text-gray-400">
-        A1 - Audio
-      </span>
-      <div className="absolute left-0 top-4 h-10 bg-green-500 rounded px-2 flex items-center text-xs text-white">
-        🎵 Background Music
-      </div>
+<div
+  onClick={() => setSelectedTrack("audio")}
+  className={`flex-1 h-16 rounded-lg flex items-center px-4 text-sm cursor-pointer relative overflow-hidden ${
+    selectedTrack === "audio"
+      ? "bg-teal-900 border-2 border-teal-500"
+      : "bg-gray-900"
+  }`}
+>
+  <span className="absolute left-2 top-1 text-xs text-gray-400">
+    A1 - Audio
+  </span>
+  {audioUrl ? (
+    <div className="absolute left-0 top-4 h-10 bg-green-500 rounded px-2 flex items-center text-xs text-white">
+      🎵 {audioName.substring(0, 15)}
     </div>
+  ) : (
+    <label className="absolute left-0 top-4 h-10 bg-green-500 rounded px-2 flex items-center text-xs text-white cursor-pointer">
+      🎵 Import Audio
+      <input
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleAudioImport}
+      />
+    </label>
+  )}
+</div>
 
     {/* Text Track */}
     <div
@@ -416,20 +527,53 @@ export default function EditorShell() {
         </div>
       )}
 
-      {showExport && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-[#1a1d24] p-6 rounded-xl w-96 border border-gray-700">
-            <h2 className="text-lg font-bold mb-4">Export Video</h2>
-            <p className="text-sm text-gray-400">Export settings coming soon...</p>
-            <button
-              onClick={() => setShowExport(false)}
-              className="mt-4 w-full bg-gray-700 px-4 py-2 rounded-lg text-sm font-medium"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+{showExport && (
+  <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div className="bg-[#1a1d24] p-6 rounded-xl w-96 border border-gray-700">
+      <h2 className="text-lg font-bold mb-4">Export Video</h2>
+
+      <label className="text-sm text-gray-400 block mb-1">Resolution</label>
+      <select
+        value={exportResolution}
+        onChange={(e) => setExportResolution(e.target.value)}
+        className="w-full bg-gray-900 rounded-lg p-2 text-sm text-white mb-4"
+      >
+        <option value="720p">720p (HD)</option>
+        <option value="1080p">1080p (Full HD)</option>
+        <option value="4K">4K (Ultra HD)</option>
+      </select>
+
+      <label className="text-sm text-gray-400 block mb-1">Format</label>
+      <select
+        value={exportFormat}
+        onChange={(e) => setExportFormat(e.target.value)}
+        className="w-full bg-gray-900 rounded-lg p-2 text-sm text-white mb-4"
+      >
+        <option value="mp4">MP4</option>
+        <option value="webm">WebM</option>
+        <option value="gif">GIF</option>
+      </select>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => {
+            setShowExport(false);
+            handleExport();
+          }}
+          className="flex-1 bg-teal-500 px-4 py-2 rounded-lg text-sm font-medium"
+        >
+          Export
+        </button>
+        <button
+          onClick={() => setShowExport(false)}
+          className="flex-1 bg-gray-700 px-4 py-2 rounded-lg text-sm font-medium"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
+  </div>
+)}
+</div>
   );
 }
